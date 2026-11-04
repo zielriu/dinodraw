@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dino Run</title>
+<style>
+:root{--bg:#f7f7f7;--fg:#535353;--mute:#9a9a9a;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1b1b1b;--fg:#d6d6d6;--mute:#777}}
+:root[data-theme="dark"]{--bg:#1b1b1b;--fg:#d6d6d6;--mute:#777}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--fg);font-family:ui-monospace,Menlo,Consolas,monospace;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:12px;box-sizing:border-box;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+canvas{width:100%;max-width:800px;height:auto;display:block}
+.hint{color:var(--mute);font-size:13px;text-align:center}
+.btns{display:flex;gap:12px;width:100%;max-width:800px}
+button{flex:1;padding:16px;font:inherit;font-size:16px;color:var(--fg);background:transparent;border:2px solid var(--fg);border-radius:8px}
+button:active{background:var(--fg);color:var(--bg)}
+#game{width:100%;display:flex;flex-direction:column;align-items:center;gap:14px}
+.row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;width:100%;max-width:800px}
+.row button{flex:0 0 auto;padding:10px 14px;font-size:14px}
+button.on{background:var(--fg);color:var(--bg)}
+#ed{display:none;flex-direction:column;align-items:center;gap:12px;width:100%}
+#ec{width:100%;max-width:520px;height:auto;border:2px solid var(--fg);touch-action:none}
+</style>
+</head>
+<body>
+<div id="game">
+<canvas id="c" width="1600" height="480"></canvas>
+<div class="btns"><button id="bj">JUMP</button><button id="bd">DUCK (hold)</button></div>
+<div class="hint">Space / ↑ = jump · ↓ = duck · tap buttons on phone</div>
+<div class="btns"><button id="toEd">✏ DRAW YOUR OWN SPRITES</button></div>
+</div>
+<div id="ed">
+<div class="row" id="tabs"></div>
+<canvas id="ec"></canvas>
+<div class="row"><button id="tDraw" class="on">Draw</button><button id="tErase">Erase</button><button id="tClear">Clear</button><button id="tBack">▶ Back to game</button></div>
+<div class="hint">Click or drag to paint. A sprite left empty uses the built-in drawing. Saved in your browser.</div>
+</div>
+<script>
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+const W=800,G=200,DX=50;
+let fg='#535353',bg='#f7f7f7';
+let state='ready',speed,dist,hi=0,frame,last,obs,clouds,pebbles,nextGap,overAt,d;
+try{hi=+localStorage.getItem('dinohi')||0}catch(e){}
+
+const DEF={dino:[24,24,'Dino'],duck:[27,14,'Duck'],cactus:[11,24,'Cactus'],bird1:[23,14,'Bird wing up'],bird2:[23,14,'Bird wing down'],cloud:[18,6,'Cloud']};
+let S={};
+for(const k in DEF)S[k]=new Array(DEF[k][0]*DEF[k][1]).fill(0);
+try{const j=JSON.parse(localStorage.getItem('dinosprites')||'null');if(j)for(const k in DEF)if(Array.isArray(j[k])&&j[k].length===S[k].length)S[k]=j[k]}catch(e){}
+function save(){try{localStorage.setItem('dinosprites',JSON.stringify(S))}catch(e){}}
+const has=k=>S[k].some(v=>v);
+function spr(k,x,y,sx,sy){const w=DEF[k][0],h=DEF[k][1],a=S[k];ctx.fillStyle=fg;for(let j=0;j<h;j++)for(let i=0;i<w;i++)if(a[j*w+i])ctx.fillRect(x+i*sx,y+j*sy,sx+0.6,sy+0.6)}
+function reset(){
+  speed=6;dist=0;frame=0;obs=[];nextGap=300;
+  d={y:0,vy:0,duck:false};
+  clouds=[{x:200,y:50},{x:520,y:80},{x:760,y:40}];
+  pebbles=Array.from({length:14},()=>({x:Math.random()*W,y:G+6+Math.random()*24,w:2+Math.random()*4}));
+}
+reset();
+
+function R(x,y,w,h,c){ctx.fillStyle=c||fg;ctx.fillRect(x,y,w,h)}
+function T(pts){ctx.fillStyle=fg;ctx.beginPath();ctx.moveTo(pts[0],pts[1]);for(let i=2;i<pts.length;i+=2)ctx.lineTo(pts[i],pts[i+1]);ctx.fill()}
+
+function drawDino(){
+  const x=DX,b=G-d.y,air=d.y>0,step=Math.floor(frame/6)%2;
+  const l1=air?12:(step?12:7),l2=air?12:(step?7:12);
+  if(d.duck&&!air&&has('duck')){spr('duck',x,b-28,2,2);return}
+  if(has('dino')){if(d.duck&&!air)spr('dino',x,b-30,2,1.25);else spr('dino',x,b-48,2,2);return}
+  if(d.duck&&!air){
+    R(x+4,b-24,34,14);R(x-6,b-22,12,7);R(x+32,b-28,22,14);
+    R(x+46,b-25,3,3,bg);R(x+42,b-17,10,2,bg);
+    R(x+10,b-10,7,l1-2);R(x+10,b-3,10,3);R(x+24,b-10,7,l2-2);R(x+24,b-3,10,3);
+  }else{
+    R(x+6,b-34,26,22);R(x-4,b-30,12,8);R(x-8,b-26,6,5);
+    R(x+24,b-48,22,16);R(x+24,b-40,8,10);
+    R(x+38,b-44,4,4,bg);R(x+34,b-36,10,2,bg);
+    R(x+30,b-24,8,4);R(x+36,b-24,3,6);
+    R(x+10,b-12,7,l1);R(x+10,b-3,11,3);R(x+22,b-12,7,l2);R(x+22,b-3,11,3);
+  }
+}
+function drawCactus(o){
+  for(let i=0;i<o.n;i++){
+    const cx=o.x+i*22,h=o.h,y1=G-h*0.55,y2=G-h*0.4;
+    if(has('cactus')){spr('cactus',cx,G-h,20/11,h/24);continue}
+    R(cx+6,G-h,8,h);R(cx+7,G-h-2,6,3);
+    R(cx,y1,8,4);R(cx,y1-10,4,14);
+    R(cx+12,y2,8,4);R(cx+16,y2-10,4,14);
+  }
+}
+function drawBird(o){
+  const x=o.x,b=G-o.yo,up=Math.floor(frame/10)%2;
+  const fr=['bird1','bird2'].filter(k=>has(k));
+  if(fr.length){spr(fr[up%fr.length],x,b-28,2,2);return}
+  R(x+8,b-22,26,12);R(x,b-20,10,4);R(x+28,b-26,10,10);
+  T([x+38,b-22,x+46,b-19,x+38,b-16]);R(x+32,b-24,2,2,bg);
+  if(up)T([x+12,b-22,x+22,b-40,x+30,b-22]);else T([x+12,b-12,x+22,b-2,x+30,b-12]);
+}
+function drawCloud(c){if(has('cloud')){ctx.globalAlpha=0.45;spr('cloud',c.x,c.y-6,2,2);ctx.globalAlpha=1;return}R(c.x,c.y,36,6,fg+'33');R(c.x+8,c.y-5,20,6,fg+'33')}
+
+function hitboxes(){
+  const dino=(d.duck&&d.y===0)?{x:DX+2,y:G-d.y-28,w:48,h:24}:{x:DX+8,y:G-d.y-46,w:34,h:44};
+  return dino;
+}
+function overlap(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y}
+function obsBox(o){
+  if(o.type==='c')return{x:o.x+3,y:G-o.h+3,w:o.w-6,h:o.h-3};
+  return{x:o.x+4,y:G-o.yo-28,w:38,h:20};
+}
+
+function spawn(){
+  const birdsOk=dist>3000&&Math.random()<0.3;
+  if(birdsOk){
+    const yo=[8,30,62][Math.floor(Math.random()*3)];
+    obs.push({type:'b',x:W+20,w:46,yo});
+  }else{
+    const n=1+Math.floor(Math.random()*3),h=34+Math.random()*18;
+    obs.push({type:'c',x:W+20,n,w:n*22-2,h});
+  }
+  nextGap=260+Math.random()*260+speed*18;
+}
+
+function jump(){
+  if(state==='ready'){state='run';last=performance.now()}
+  else if(state==='over'){if(performance.now()-overAt>300){reset();state='run';last=performance.now()}}
+  else if(d.y===0){d.vy=13}
+}
+function setDuck(v){d.duck=v;if(v&&d.y>0)d.vy=Math.min(d.vy,-8)}
+
+function update(dt){
+  frame+=dt;dist+=speed*dt;speed=Math.min(14,6+dist/2500);
+  d.y+=d.vy*dt;d.vy-=0.7*dt;if(d.y<=0){d.y=0;d.vy=0}
+  obs.forEach(o=>o.x-=speed*dt);
+  obs=obs.filter(o=>o.x>-80);
+  const lastO=obs[obs.length-1];
+  if(!lastO||W-lastO.x>nextGap)spawn();
+  clouds.forEach(c=>{c.x-=speed*0.2*dt;if(c.x<-50){c.x=W+Math.random()*100;c.y=30+Math.random()*60}});
+  pebbles.forEach(p=>{p.x-=speed*dt;if(p.x<-10){p.x=W+Math.random()*40}});
+  const hb=hitboxes();
+  for(const o of obs)if(overlap(hb,obsBox(o))){
+    state='over';overAt=performance.now();
+    const s=Math.floor(dist/10);
+    if(s>hi){hi=s;try{localStorage.setItem('dinohi',hi)}catch(e){}}
+  }
+}
+
+function render(){
+  const cs=getComputedStyle(document.documentElement);
+  fg=cs.getPropertyValue('--fg').trim()||fg;bg=cs.getPropertyValue('--bg').trim()||bg;
+  ctx.setTransform(2,0,0,2,0,0);
+  ctx.fillStyle=bg;ctx.fillRect(0,0,W,240);
+  clouds.forEach(drawCloud);
+  R(0,G,W,2);
+  pebbles.forEach(p=>R(p.x,p.y,p.w,2,fg+'66'));
+  obs.forEach(o=>o.type==='c'?drawCactus(o):drawBird(o));
+  drawDino();
+  ctx.fillStyle=fg;ctx.font='bold 18px ui-monospace,Menlo,Consolas,monospace';ctx.textAlign='right';
+  ctx.fillText('HI '+String(hi).padStart(5,'0')+'  '+String(Math.floor(dist/10)).padStart(5,'0'),W-16,28);
+  ctx.textAlign='center';
+  if(state==='ready')ctx.fillText('PRESS SPACE OR TAP JUMP TO START',W/2,110);
+  if(state==='over'){ctx.font='bold 28px ui-monospace,Menlo,Consolas,monospace';ctx.fillText('G A M E   O V E R',W/2,100);
+    ctx.font='15px ui-monospace,Menlo,Consolas,monospace';ctx.fillText('jump to restart',W/2,128)}
+}
+
+function loop(now){
+  if(state==='run'){const dt=Math.min(3,(now-last)/16.667);last=now;update(dt)}
+  render();requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+addEventListener('keydown',e=>{if(editing)return;
+  if(['Space','ArrowUp','KeyW'].includes(e.code)){e.preventDefault();if(!e.repeat)jump()}
+  if(['ArrowDown','KeyS'].includes(e.code)){e.preventDefault();setDuck(true)}
+});
+addEventListener('keyup',e=>{if(['ArrowDown','KeyS'].includes(e.code))setDuck(false)});
+const bj=document.getElementById('bj'),bd=document.getElementById('bd');
+bj.addEventListener('pointerdown',e=>{e.preventDefault();jump()});
+bd.addEventListener('pointerdown',e=>{e.preventDefault();setDuck(true)});
+['pointerup','pointerleave','pointercancel'].forEach(t=>bd.addEventListener(t,()=>setDuck(false)));
+cv.addEventListener('pointerdown',e=>{e.preventDefault();jump()});
+
+/* sprite editor */
+let editing=false,cur='dino',tool=1,down=false;
+const ec=document.getElementById('ec'),ex=ec.getContext('2d'),tabs=document.getElementById('tabs');
+const gm=document.getElementById('game'),ed=document.getElementById('ed'),CELL=20;
+function edRender(){
+  const w=DEF[cur][0],h=DEF[cur][1];ec.width=w*CELL;ec.height=h*CELL;
+  const cs=getComputedStyle(document.documentElement);
+  const f=cs.getPropertyValue('--fg').trim(),b=cs.getPropertyValue('--bg').trim();
+  ex.fillStyle=b;ex.fillRect(0,0,ec.width,ec.height);
+  ex.fillStyle=f;
+  for(let j=0;j<h;j++)for(let i=0;i<w;i++)if(S[cur][j*w+i])ex.fillRect(i*CELL,j*CELL,CELL,CELL);
+  ex.strokeStyle=f+'33';ex.lineWidth=1;ex.beginPath();
+  for(let i=0;i<=w;i++){ex.moveTo(i*CELL+.5,0);ex.lineTo(i*CELL+.5,ec.height)}
+  for(let j=0;j<=h;j++){ex.moveTo(0,j*CELL+.5);ex.lineTo(ec.width,j*CELL+.5)}
+  ex.stroke();
+}
+function mkTabs(){tabs.innerHTML='';for(const k in DEF){const b=document.createElement('button');b.textContent=DEF[k][2];if(k===cur)b.className='on';b.onclick=()=>{cur=k;mkTabs();edRender()};tabs.appendChild(b)}}
+function paint(e){
+  const r=ec.getBoundingClientRect(),w=DEF[cur][0],h=DEF[cur][1];
+  const i=Math.floor((e.clientX-r.left)/r.width*w),j=Math.floor((e.clientY-r.top)/r.height*h);
+  if(i<0||j<0||i>=w||j>=h)return;
+  const idx=j*w+i;if(S[cur][idx]!==tool){S[cur][idx]=tool;edRender()}
+}
+ec.addEventListener('pointerdown',e=>{e.preventDefault();down=true;ec.setPointerCapture(e.pointerId);paint(e)});
+ec.addEventListener('pointermove',e=>{if(down)paint(e)});
+['pointerup','pointercancel'].forEach(t=>ec.addEventListener(t,()=>{down=false;save()}));
+const tD=document.getElementById('tDraw'),tE=document.getElementById('tErase');
+tD.onclick=()=>{tool=1;tD.className='on';tE.className=''};
+tE.onclick=()=>{tool=0;tE.className='on';tD.className=''};
+document.getElementById('tClear').onclick=()=>{S[cur].fill(0);save();edRender()};
+document.getElementById('toEd').onclick=()=>{editing=true;setDuck(false);state='ready';reset();gm.style.display='none';ed.style.display='flex';mkTabs();edRender()};
+document.getElementById('tBack').onclick=()=>{editing=false;ed.style.display='none';gm.style.display='flex';state='ready';reset()};
+</script>
+</body>
+</html>
