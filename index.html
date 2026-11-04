@@ -20,7 +20,7 @@ button:active{background:var(--fg);color:var(--bg)}
 .row button{flex:0 0 auto;padding:10px 14px;font-size:14px}
 button.on{background:var(--fg);color:var(--bg)}
 #ed{display:none;flex-direction:column;align-items:center;gap:12px;width:100%}
-#ec{width:100%;max-width:520px;height:auto;border:2px solid var(--fg);touch-action:none}
+#ec{display:block;max-width:100%;border:2px solid var(--fg);touch-action:none}
 </style>
 </head>
 <body>
@@ -178,12 +178,15 @@ bd.addEventListener('pointerdown',e=>{e.preventDefault();setDuck(true)});
 ['pointerup','pointerleave','pointercancel'].forEach(t=>bd.addEventListener(t,()=>setDuck(false)));
 cv.addEventListener('pointerdown',e=>{e.preventDefault();jump()});
 
+addEventListener('resize',()=>{if(editing)edRender()});
 /* sprite editor */
 let editing=false,cur='dino',tool=1,down=false;
 const ec=document.getElementById('ec'),ex=ec.getContext('2d'),tabs=document.getElementById('tabs');
 const gm=document.getElementById('game'),ed=document.getElementById('ed'),CELL=20;
 function edRender(){
   const w=DEF[cur][0],h=DEF[cur][1];ec.width=w*CELL;ec.height=h*CELL;
+  const sc=Math.min(Math.min(520,innerWidth-40)/ec.width,innerHeight*0.5/ec.height);
+  ec.style.width=Math.floor(ec.width*sc)+'px';ec.style.height=Math.floor(ec.height*sc)+'px';
   const cs=getComputedStyle(document.documentElement);
   const f=cs.getPropertyValue('--fg').trim(),b=cs.getPropertyValue('--bg').trim();
   ex.fillStyle=b;ex.fillRect(0,0,ec.width,ec.height);
